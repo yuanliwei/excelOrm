@@ -93,7 +93,7 @@ public class ExcelParseTest {
 	@Test
 	public void testParse() throws Exception {
 		String excel = "src/test/resources/工作簿1.xlsx";
-		List<Vocebulary> vocebularies = ExcelParse.parse(excel, Vocebulary.class);
+		List<Vocebulary> vocebularies = ExcelParser.parse(excel, Vocebulary.class);
 		vocebularies.forEach(action -> {
 			log.debug(action.toString());
 		});

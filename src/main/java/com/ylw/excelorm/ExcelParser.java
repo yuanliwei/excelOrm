@@ -21,9 +21,9 @@ import com.ylw.excelorm.annotation.Cell;
 import com.ylw.excelorm.annotation.ErrorHandle;
 import com.ylw.excelorm.annotation.Excel;
 
-public class ExcelParse<T> {
+public class ExcelParser<T> {
 
-	private static org.apache.commons.logging.Log log = LogFactory.getLog(ExcelParse.class);
+	private static org.apache.commons.logging.Log log = LogFactory.getLog(ExcelParser.class);
 
 	public static <T> List<T> parse(String excel, Class<T> clazz) throws Exception {
 		File file = new File(excel);
@@ -114,40 +114,46 @@ public class ExcelParse<T> {
 				break;
 			default:
 			}
-
-			if (value != null) {
+			if (value == null) {
 				try {
-					switch (fieldObj.getName()) {
-					case "int":
-						value = (int) ((Double) value).doubleValue();
-						break;
-					case "float":
-						value = (float) ((Double) value).doubleValue();
-						break;
-					case "java.lang.String":
-						value = (String) value;
-						break;
-
-					default:
-						throw new IllegalStateException("unknown type : " + fieldObj.getName());
+					if (fieldObj.getErrorHandle() != null) {
+						value = fieldObj.getErrorHandle().invoke(obj, value);
+						fieldObj.getSetMethod().invoke(obj, value);
 					}
-				} catch (Exception e) {
-					try {
-						if (fieldObj.getErrorHandle() != null)
-							value = fieldObj.getErrorHandle().invoke(obj, value);
-						else {
-							log.error(e);
-						}
-					} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e1) {
-						log.error(e1);
-					}
+				} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e1) {
+					log.error("row:" + row.getRowNum() + " col:" + cell.getColumnIndex() + " value:" + value + "   -   "
+							+ e1.getMessage(), e1);
 				}
+				continue;
 			}
-
 			try {
+				switch (fieldObj.getName()) {
+				case "int":
+					value = (int) ((Double) value).doubleValue();
+					break;
+				case "float":
+					value = (float) ((Double) value).doubleValue();
+					break;
+				case "java.lang.String":
+					value = (String) value;
+					break;
+
+				default:
+					throw new IllegalStateException("unknown type : " + fieldObj.getName());
+				}
 				fieldObj.getSetMethod().invoke(obj, value);
-			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				log.error(e);
+			} catch (Exception e) {
+				try {
+					if (fieldObj.getErrorHandle() != null) {
+						value = fieldObj.getErrorHandle().invoke(obj, value);
+						fieldObj.getSetMethod().invoke(obj, value);
+					} else {
+						log.error("row:" + row.getRowNum() + " col:" + cell.getColumnIndex() + " value:" + value, e);
+					}
+				} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e1) {
+					log.error(e1.getMessage());
+				}
+
 			}
 
 		}
@@ -156,15 +162,7 @@ public class ExcelParse<T> {
 
 	public static String toUpperCaseFirstOne(String name) {
 		char[] ch = name.toCharArray();
-		for (int i = 0; i < ch.length; i++) {
-			if (i == 0) {
-				ch[0] = Character.toUpperCase(ch[0]);
-			} else {
-				ch[i] = Character.toLowerCase(ch[i]);
-			}
-		}
-		StringBuffer a = new StringBuffer();
-		a.append(ch);
-		return a.toString();
+		ch[0] = Character.toUpperCase(ch[0]);
+		return new StringBuffer().append(ch).toString();
 	}
 }
