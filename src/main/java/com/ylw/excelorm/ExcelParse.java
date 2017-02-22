@@ -11,8 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.commons.logging.LogFactory;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -20,17 +19,19 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import com.ylw.excelorm.annotation.Cell;
 import com.ylw.excelorm.annotation.ErrorHandle;
-import com.ylw.excelorm.annotation.Sheet;
-import com.ylw.excelorm.model.Vocebulary;
+import com.ylw.excelorm.annotation.Excel;
 
-public class ExcelParse {
-	public static List<Object> parse(String excel, Class<?> clazz) throws Exception {
+public class ExcelParse<T> {
+
+	private static org.apache.commons.logging.Log log = LogFactory.getLog(ExcelParse.class);
+
+	public static <T> List<T> parse(String excel, Class<T> clazz) throws Exception {
 		File file = new File(excel);
 
 		XSSFWorkbook xssfWorkbook = new XSSFWorkbook(file);
-		Sheet[] annotation = clazz.getAnnotationsByType(Sheet.class);
-		int order = annotation[0].order();
-		XSSFSheet xssfSheet = xssfWorkbook.getSheetAt(order);
+		Excel[] annotation = clazz.getAnnotationsByType(Excel.class);
+		int sheet = annotation[0].sheet();
+		XSSFSheet xssfSheet = xssfWorkbook.getSheetAt(sheet);
 
 		Field[] fileds = clazz.getDeclaredFields();
 		Map<Integer, FieldObj> fieldMap = new HashMap<Integer, FieldObj>();
@@ -41,11 +42,11 @@ public class ExcelParse {
 				String setName = "set" + toUpperCaseFirstOne(field.getName());
 				Method setMethod = clazz.getDeclaredMethod(setName, field.getType());
 				if (setMethod == null) {
-					System.out.println("set method \"" + setName + "\" not exist!");
+					log.debug("set method \"" + setName + "\" not exist!");
 				}
-				int index = cellAnnotation.value();
-				fieldMap.put(index, new FieldObj(index, field, setMethod, field.getType().getName()));
-				System.out.println("field type name : " + field.getType().getName());
+				int col = cellAnnotation.col();
+				fieldMap.put(col, new FieldObj(col, field, setMethod, field.getType().getName()));
+				log.debug("field type name : " + field.getType().getName());
 			}
 		}
 
@@ -54,35 +55,37 @@ public class ExcelParse {
 			Method method = methods[i];
 			ErrorHandle errorHandleAnnotation = method.getAnnotation(ErrorHandle.class);
 			if (errorHandleAnnotation != null) {
-				int index = errorHandleAnnotation.value();
-				FieldObj fieldObj = fieldMap.get(index);
+				int col = errorHandleAnnotation.col();
+				FieldObj fieldObj = fieldMap.get(col);
 				if (fieldObj != null) {
 					fieldObj.setErrorHandle(method);
 				}
 			}
 		}
 
-		// int rowstart = xssfSheet.getFirstRowNum();
 		int rowstart = annotation[0].firstRow();
 		int rowEnd = xssfSheet.getLastRowNum();
-		List<Object> list = new ArrayList<Object>();
+		List<T> list = new ArrayList<>();
 
 		for (int i = rowstart; i <= rowEnd; i++) {
 			XSSFRow row = xssfSheet.getRow(i);
 			if (null == row)
 				continue;
-			list.add(getEntry(row, fieldMap));
-			System.out.println(getEntry(row, fieldMap).toString());
-			int cellStart = row.getFirstCellNum();
-			int cellEnd = row.getLastCellNum();
-			// System.out.print("cellStart : " + cellStart);
+			list.add(getEntry(row, fieldMap, clazz));
 		}
 		xssfWorkbook.close();
-		return null;
+		return list;
 	}
 
-	private static Object getEntry(XSSFRow row, Map<Integer, FieldObj> fieldMap) {
-		Vocebulary obj = new Vocebulary();
+	@SuppressWarnings("deprecation")
+	private static <T> T getEntry(XSSFRow row, Map<Integer, FieldObj> fieldMap, Class<T> clazz) {
+		T obj = null;
+		try {
+			obj = clazz.newInstance();
+		} catch (InstantiationException | IllegalAccessException e2) {
+			log.error(e2);
+			return null;
+		}
 		Iterator<Entry<Integer, FieldObj>> it = fieldMap.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry<Integer, FieldObj> entry = (Map.Entry<Integer, FieldObj>) it.next();
@@ -95,31 +98,21 @@ public class ExcelParse {
 
 			switch (cell.getCellTypeEnum()) {
 			case STRING:
-				// System.out.println(cell.getRichStringCellValue().getString());
 				value = cell.getRichStringCellValue().getString();
 				break;
 			case NUMERIC:
-				if (DateUtil.isCellDateFormatted(cell)) {
-					// System.out.println(cell.getDateCellValue());
-				} else {
-					// System.out.println(cell.getNumericCellValue());
-				}
 				value = cell.getNumericCellValue();
 				break;
 			case BOOLEAN:
-				// System.out.println(cell.getBooleanCellValue());
 				value = cell.getBooleanCellValue();
 				break;
 			case FORMULA:
-				// System.out.println(cell.getCellFormula());
 				value = cell.getCellFormula();
 				break;
 			case BLANK:
-				// System.out.println();
 				value = null;
 				break;
 			default:
-				// System.out.println();
 			}
 
 			if (value != null) {
@@ -136,18 +129,17 @@ public class ExcelParse {
 						break;
 
 					default:
-						System.err.println("unknown type : " + fieldObj.getName());
-						break;
+						throw new IllegalStateException("unknown type : " + fieldObj.getName());
 					}
 				} catch (Exception e) {
 					try {
 						if (fieldObj.getErrorHandle() != null)
 							value = fieldObj.getErrorHandle().invoke(obj, value);
 						else {
-							e.printStackTrace();
+							log.error(e);
 						}
 					} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e1) {
-						e1.printStackTrace();
+						log.error(e1);
 					}
 				}
 			}
@@ -155,7 +147,7 @@ public class ExcelParse {
 			try {
 				fieldObj.getSetMethod().invoke(obj, value);
 			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				e.printStackTrace();
+				log.error(e);
 			}
 
 		}

@@ -7,11 +7,12 @@ import java.lang.annotation.Target;
 
 @Target({ ElementType.TYPE })
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Sheet {
-	// int value();
-	int order() default 0;
+public @interface Excel {
+
+	int sheet() default 0;
+
+	int firstRow() default 1;
 
 	int wrongIgnoreNum() default 0;
 
-	int firstRow() default 1;
 }
